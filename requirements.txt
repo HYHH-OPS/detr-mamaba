@@ -1,0 +1,9 @@
+torch>=2.0
+torchvision>=0.14
+mamba-ssm>=1.1.0
+transformers>=4.35
+pillow
+numpy
+seaborn
+matplotlib
+torchmetrics
