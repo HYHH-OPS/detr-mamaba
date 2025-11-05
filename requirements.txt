@@ -7,3 +7,6 @@ numpy
 seaborn
 matplotlib
 torchmetrics
+requests
+beautifulsoup4
+tqdm
