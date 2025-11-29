@@ -1,46 +1,46 @@
-# Soybean Disease Multimodal Pipeline
+# 大豆病害多模态管线
 
-This repository provides a complete computer-vision and natural-language-processing pipeline to detect soybean leaf diseases and answer agronomic questions about the findings. The framework combines a DETR detector (forward pass based on `torchvision`'s implementation) with a Mamba-based text classifier and a fusion model for multimodal question answering.
+该仓库提供一套完整的计算机视觉与自然语言处理流程，用于识别大豆叶片病害并回答相关农艺问题。框架结合了 DETR 目标检测器（基于 `torchvision` 的前向实现）、Mamba 文本分类器以及多模态融合模型。
 
-## Repository structure
+## 仓库结构
 
 ```
 src/
   detr_mamaba/
-    cv/                # DETR training, evaluation, augmentation helpers
-    nlp/               # Mamba text dataset utilities and training
-    multimodal/        # Fusion dataset, model, training, evaluation
+    cv/                # DETR 训练、评估与数据增强工具
+    nlp/               # Mamba 文本数据集与训练脚本
+    multimodal/        # 融合数据集、模型、训练与评估
 scripts/
-  run_pipeline.py      # Command line interface for all stages
-requirements.txt       # Core dependencies (CPU/GPU compatible)
+  run_pipeline.py      # 统一的命令行入口
+requirements.txt       # 核心依赖（CPU/GPU 兼容）
 ```
 
-## Prerequisites
+## 环境准备
 
-1. **Python**: 3.9 or newer.
-2. **PyTorch**: install the variant that matches your CUDA toolkit if you plan to use GPUs. Follow the official [installation instructions](https://pytorch.org/get-started/locally/).
-3. **Mamba SSM**: the NLP model relies on the `mamba-ssm` package. Prebuilt wheels are available for macOS (Apple Silicon and Intel) and Windows.
+1. **Python**：3.9 及以上。
+2. **PyTorch**：如需使用 GPU，请按照官方 [安装指南](https://pytorch.org/get-started/locally/) 安装与本地 CUDA 对应的版本。
+3. **Mamba SSM**：NLP 模型依赖 `mamba-ssm` 包，macOS（Intel/Apple Silicon）与 Windows 均提供预编译 wheel。
 
-Install the Python dependencies:
+安装依赖示例：
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
+source .venv/bin/activate  # Windows 使用 .venv\Scripts\activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-If you need GPU support on Windows, run the PyTorch installation command suggested on pytorch.org before installing the rest of the requirements to ensure compatible CUDA packages are selected.
+如需 Windows GPU 支持，请先按照 pytorch.org 提示安装匹配 CUDA 的 PyTorch，再安装其余依赖。
 
-## Dataset layout
+## 数据集组织
 
-The code expects the soybean detection dataset to follow the structure described in the prompt:
+DETR 训练数据的默认目录结构：
 
 ```
 大豆叶片病害数据集/
   train/
-    images/   # training images
-    labels/   # YOLO-format label files
+    images/   # 训练图片
+    labels/   # YOLO 格式标注
   val/
     images/
     labels/
@@ -49,70 +49,92 @@ The code expects the soybean detection dataset to follow the structure described
     labels/
 ```
 
-The NLP CSV files should contain two columns (`text`, `label`) describing the disease categories: `Healthy`, `Bean_Rust`, `Angular_Leaf_Spot`.
+NLP 文本 CSV 应包含两列（`text`, `label`），标签可为 `Healthy`、`Bean_Rust`、`Angular_Leaf_Spot`。
 
-## Training and evaluation
+## 训练与评估流程
 
-All workflows are orchestrated by `scripts/run_pipeline.py`.
+所有流程均通过 `scripts/run_pipeline.py` 调度。
 
-### 1. Train DETR on soybean imagery
+### 1. 训练 DETR 视觉模型
 
 ```bash
 python scripts/run_pipeline.py train-cv --train-root /Users/.../train --val-root /Users/.../val --epochs 100 --batch-size 4
 ```
 
-Checkpoints are written to `checkpoints/`. During validation, mean average precision (when `torchmetrics` is installed) and per-epoch loss values are recorded. After training, evaluate and produce plots:
+检查点默认保存在 `checkpoints/`。验证阶段会记录 mAP（安装 `torchmetrics` 时可用）与各 epoch 的 loss。训练完成后可评估并绘图：
 
 ```bash
 python scripts/run_pipeline.py eval-cv --checkpoint checkpoints/detr_epoch_100.pt --data-root /Users/.../test --save results/cv_confusion.png
 ```
 
-The evaluation routine emits aggregate precision/recall scores and renders the confusion matrix using Seaborn.
+### 2. 准备文本数据并训练 Mamba 分类器
 
-### 2. Prepare textual data and train the Mamba classifier
-
-Collect short agronomic descriptions for each disease type (official agricultural bulletins, extension service documents, etc.), save them into a CSV file, and fine-tune the Mamba classifier:
+收集各病害类别的简短描述，保存在 CSV 后即可微调分类器：
 
 ```bash
 python scripts/run_pipeline.py train-nlp --train-csv data/soy_disease_text_train.csv --val-csv data/soy_disease_text_val.csv --tokenizer bert-base-uncased
 ```
 
-This command stores NLP checkpoints under `checkpoints_nlp/`. Accuracy and validation loss are reported every epoch.
+检查点会存于 `checkpoints_nlp/`，训练日志会输出精度与验证损失。
 
-### 3. Train the multimodal QA model
+### 3. 训练多模态问答模型
 
-The multimodal dataset pairs each annotated image with textual snippets of the corresponding disease label. Train the fusion model as follows:
+多模态数据集将图片与相应文本标签配对，训练命令示例：
 
 ```bash
 python scripts/run_pipeline.py train-mm --image-root /Users/.../train --text-csv data/soy_disease_text_train.csv --tokenizer bert-base-uncased
 ```
 
-The script creates checkpoints in `checkpoints_multimodal/`. To evaluate the fused model and export diagnostic plots:
+模型保存在 `checkpoints_multimodal/`，评估与绘图示例：
 
 ```bash
 python scripts/run_pipeline.py eval-mm --checkpoint checkpoints_multimodal/multimodal_epoch_005.pt --image-root /Users/.../val --text-csv data/soy_disease_text_val.csv --tokenizer bert-base-uncased --save results/multimodal_confusion.png
 ```
 
-### 4. Windows-specific notes
+### 4. Windows 注意事项
 
-On Windows PowerShell, replace forward slashes in paths with escaped backslashes or wrap the paths in quotes. Activate the virtual environment with:
+在 PowerShell 中可使用：
 
 ```powershell
-.venv\\Scripts\\Activate.ps1
+.venv\Scripts\Activate.ps1
 ```
 
-Ensure that the Visual C++ runtime and GPU drivers (if applicable) are up to date before installing PyTorch and `mamba-ssm`.
+请确保安装 Visual C++ 运行时并更新 GPU 驱动（如使用 CUDA）。路径中的 `/` 可改为转义的 `\` 或用引号包裹。
 
-### 5. macOS-specific notes
+### 5. macOS 注意事项
 
-On macOS (Intel or Apple Silicon), the default `pip install -r requirements.txt` command will install CPU wheels. For Apple Silicon GPUs via `mps`, ensure you are on macOS 12.3 or newer and run your scripts with `PYTORCH_ENABLE_MPS_FALLBACK=1` if you experience missing operator errors.
+默认 `pip install -r requirements.txt` 会安装 CPU 版本。如需 Apple Silicon 的 `mps`，确保系统为 macOS 12.3+，并在出现算子缺失时尝试：
 
-## Extending the pipeline
+```bash
+PYTORCH_ENABLE_MPS_FALLBACK=1 python ...
+```
 
-- **Data augmentation**: extend `detr_mamaba/cv/augmentation.py` with additional transformations (CutMix, random crops) and pass them into `SoyDiseaseDetectionDataset`.
-- **Hyperparameter tuning**: update the dataclass configurations for learning rate, batch sizes, and scheduling strategies.
-- **Knowledge integration**: expand the NLP CSV files with curated Q&A pairs describing symptoms, treatments, and prevention methods so that the multimodal fusion module can produce richer answers.
+## 扩展建议
+
+- **数据增强**：在 `detr_mamaba/cv/augmentation.py` 添加 CutMix、随机裁剪等变换，并传入 `SoyDiseaseDetectionDataset`。
+- **超参数调优**：通过对应的 dataclass 配置学习率、批大小与调度策略。
+- **知识扩展**：在 NLP CSV 中补充症状、治疗、预防等问答对，让融合模型生成更丰富的回答。
+
+## AI 驱动局域网聊天练习
+
+`scripts/lan_chat_app.py` 提供轻量的 asyncio 聊天示例，支持局域网对话与 `@电影` 触发，亦可提醒队友（如 `@川小农`）。
+
+### 启动服务器
+
+```bash
+python scripts/lan_chat_app.py server --host 0.0.0.0 --port 9009 --ai-name 助手
+```
+
+可通过 `--movies` 传入逗号分隔的推荐片单，或使用 `--room` 为聊天室命名。
+
+### 加入聊天
+
+```bash
+python scripts/lan_chat_app.py client --host <server-ip> --port 9009 --name 川小农
+```
+
+输入消息并回车即可广播。提及 `@电影` 可获得电影推荐，@AI 昵称或 `@助手` 会得到即时回复，`@帮助` 可查看可用指令。示例无外部依赖，可与主训练流程并行试验。
 
 ## License
 
-This repository is provided as-is for research and educational purposes.
+本仓库仅用于研究与教学目的，按现状提供。
